@@ -14,13 +14,14 @@ function export_environment() {
   export CC=${BUILD_ENVS["cc"]}
   export PREFIX=/usr/local
   export CGO_ENABLED="1"
-  GOOS=$(go env $GOARCH)
-  if [ "$GOARCH" == "arm64" ]; then
+  GOARCH=$(go env $GOARCH)
+  GOOS=$(go env $GOOS)
+  if [ "$GOARCH" == "arm64" ] && [ "$GOOS" == "darwin" ]; then
     export HOST=arm64-apple-darwin15
     export AR=${BUILD_ENVS["arm64_ar"]}
     export LD=${BUILD_ENVS["arm64_ld"]}
   fi
-  if [ "$GOARCH" == "amd64" ]; then
+  if [ "$GOARCH" == "amd64" ] && [ "$GOOS" == "darwin" ]; then
     export HOST=amd64-apple-darwin15
     export AR=${BUILD_ENVS["amd64_ar"]}
     export LD=${BUILD_ENVS["amd64_ld"]}
