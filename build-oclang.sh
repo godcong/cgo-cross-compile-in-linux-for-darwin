@@ -1,6 +1,21 @@
 #!/bin/bash
 
+# Setting the download osx_sdk output directory
 DOWNLOAD_PATH="downloads"
+
+# Configure the container for OSX cross compilation
+WORK_TEMP="tmp"
+# Absolute address must be entered
+TARGET_PATH="$(pwd)/../build"
+
+OSXCROSS_PATH="$TARGET_PATH/osxcross"
+OSXCROSS_MIRROR="https://github.com/tpoechtrager/osxcross.git"
+LD_LIBRARY_PATH="$OSXCROSS_PATH/target/lib:$LD_LIBRARY_PATH"
+
+OSX_SDK=MacOSX11.3.sdk
+OSX_SDK_PATH="$DOWNLOAD_PATH/$OSX_SDK.tar.xz"
+OSX_DOWNLOAD_URL="https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/${OSX_SDK}.tar.xz"
+OSX_SDK_TEMP="$WORK_TEMP/$OSX_SDK"
 
 function check_build_environment() {
   if [ ! -f "updated" ]; then
@@ -50,20 +65,6 @@ ln -s /usr/include/asm-generic /usr/include/asm
 ##########################
 # Darwin Toolchain build #
 ##########################
-
-# Configure the container for OSX cross compilation
-SHOW_DETAIL=false
-WORK_TEMP="../crosstmp"
-TARGET_PATH="../target"
-
-OSXCROSS_PATH="$TARGET_PATH/osxcross"
-OSXCROSS_MIRROR="https://github.com/tpoechtrager/osxcross.git"
-LD_LIBRARY_PATH="$OSXCROSS_PATH/target/lib:$LD_LIBRARY_PATH"
-
-OSX_SDK=MacOSX11.3.sdk
-OSX_SDK_PATH="$DOWNLOAD_PATH/$OSX_SDK.tar.xz"
-OSX_DOWNLOAD_URL="https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/${OSX_SDK}.tar.xz"
-
 # Download the osx sdk and build the osx toolchain
 # We download the osx sdk, patch it and pack it again to be able to throw the patched version at osxcross
 function download_osx_sdk() {
@@ -80,7 +81,6 @@ function download_osx_sdk() {
 }
 
 function tar_unpack_osx_sdk() {
-  sdk_tmp="$WORK_TEMP/$OSX_SDK"
   if [ ! -d "$WORK_TEMP" ]; then
     mkdir -p "$WORK_TEMP"
   fi
@@ -89,60 +89,55 @@ function tar_unpack_osx_sdk() {
     exit 0
   fi
   echo "Tar unpacking..."
-  if $SHOW_DETAIL; then
-    if [ -d "$sdk_tmp" ]; then
-      echo "removing previous temporary"
-      rm -rvf "$sdk_tmp"
-    fi
-    tar -xvf "$OSX_SDK_PATH" -C "$WORK_TEMP"
-    return
-  fi
-  if [ -d "$sdk_tmp" ]; then
+  if [ -d "$OSX_SDK_TEMP" ]; then
     echo "removing previous temporary"
-    rm -rf "$sdk_tmp"
+    rm -rf "$OSX_SDK_TEMP"
   fi
   tar -xf "$OSX_SDK_PATH" -C "$WORK_TEMP"
 }
 
 function tar_pack_osx_sdk() {
-  sdk_tmp="$WORK_TEMP/$OSX_SDK"
-  if [ ! -d "$sdk_tmp" ]; then
-    echo "Error: OSX_SDK was not tar in $sdk_tmp"
+  if [ ! -d "$OSX_SDK_TEMP" ]; then
+    echo "Error: OSX_SDK was not tar in $OSX_SDK_TEMP"
     exit 0
   fi
   echo "Tar packing..."
-  if $SHOW_DETAIL; then
-    tar -cvf - "$sdk_tmp" | xz -c - >"$WORK_TEMP/$OSX_SDK.tar.xz" && rm -rvf "$sdk_tmp"
-    return
-  fi
-  tar -cf - "$sdk_tmp" | xz -c - >"$WORK_TEMP/$OSX_SDK.tar.xz" && rm -rf "$sdk_tmp"
+  cd "$WORK_TEMP" || exit
+  tar -cf - "$OSX_SDK" | xz -c - >"$WORK_TEMP/$OSX_SDK.tar.xz" && rm -rf "$OSX_SDK"
 }
 
 function push_patch_to_osx_sdk() {
-  sdk_tmp="$WORK_TEMP/$OSX_SDK"
-  if [ ! -d "$sdk_tmp" ]; then
-    echo "Error: OSX_SDK was not tar in $sdk_tmp"
+  if [ ! -d "$OSX_SDK_TEMP" ]; then
+    echo "Error: OSX_SDK was not tar in $OSX_SDK_TEMP"
     exit 0
   fi
-  cp ./patch/patch.tar.xz "$sdk_tmp/usr/include/c++"
+  cp ./patch/patch.tar.xz "$OSX_SDK_TEMP/usr/include/c++"
+}
+
+function clone_repo() {
+  if [ ! -d "$OSXCROSS_PATH" ]; then
+    cd "$TARGET_PATH" || exit
+    echo "Cloning toolchain from $OSXCROSS_MIRROR..."
+    git clone $OSXCROSS_MIRROR
+    cd "$OSXCROSS_PATH" || exit
+    git checkout master
+
+  fi
 }
 
 function build_toolchain() {
   wd=$(pwd)
-  if [ ! -d $TARGET_PATH ]; then
-    mkdir -p $TARGET_PATH
+  if [ ! -d "$TARGET_PATH" ]; then
+    mkdir -p "$TARGET_PATH"
   fi
-  if [ ! -d $OSXCROSS_PATH ]; then
-    cd "$TARGET_PATH" || exit
-    echo "Cloning toolchain from $OSXCROSS_MIRROR..."
-    git clone $OSXCROSS_MIRROR
-    cd "osxcross" || exit
-    git checkout master
-    cd "$wd" || exit
-  fi
+
+  clone_repo
+  cd "$wd" || exit
   check_build_environment
-  OSX_VERSION_MIN=10.13 UNATTENDED=1 LD_LIBRARY_PATH=$LD_LIBRARY_PATH "$OSXCROSS_PATH/build.sh"
-  echo "Building successfully"
+  cd "$OSXCROSS_PATH" || exit
+  OSX_VERSION_MIN=10.13 UNATTENDED=1 LD_LIBRARY_PATH=$LD_LIBRARY_PATH "./build.sh"
+  cd "$wd" || exit
+
 }
 
 function check_build_environment() {
@@ -153,13 +148,22 @@ function check_build_environment() {
     tar_pack_osx_sdk
   fi
 
-  if [ ! -f $WORK_TEMP/$OSX_SDK.tar.xz ]; then
+  if [ ! -f "$WORK_TEMP/$OSX_SDK.tar.xz" ]; then
     return
   fi
 
   if [ ! -f "$OSXCROSS_PATH/tarballs/$OSX_SDK.tar.xz" ]; then
+    echo "Moving $WORK_TEMP/$OSX_SDK.tar.xz to $OSXCROSS_PATH/tarballs/"
     mv "$WORK_TEMP/$OSX_SDK.tar.xz" "$OSXCROSS_PATH/tarballs/"
   fi
 }
 
+function setting_global() {
+  echo "export PATH=$OSXCROSS_PATH/target/bin/:$PATH" >>/etc/profile
+  echo "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >>/etc/profile
+}
+
 build_toolchain
+setting_global
+
+echo "Building successfully"
