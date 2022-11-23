@@ -18,11 +18,13 @@ in `build-oclang.sh` will export:
   echo "export PATH=$OSXCROSS_PATH/target/bin/:$PATH" >>/etc/profile
   echo "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >>/etc/profile
 ```
-Then `go.sh` will used `TOOLCHAIN` path point to `osxcross/target/bin`:
+Then `go.sh` will use `TOOLCHAIN` path point to `osxcross/target/bin`:
 ```
 readonly TOOLCHAIN="$(pwd)/../build/osxcross/target/bin"
 ```
 You can also change the TOOLCHAIN path to absolute path,then copy the `go.sh` to the system path for used at global.
+Or you can use `go` with settings like in `go.sh`, The configuration in `go.sh` is very simple.
+
 
 ## Thanks to
 https://github.com/techknowlogick/xgo
